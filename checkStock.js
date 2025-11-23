@@ -1,5 +1,5 @@
 import pkg from "ikea-availability-checker";
-const { availability, IOWS2 } = pkg;
+const { availability } = pkg;
 import nodemailer from "nodemailer";
 
 // --- Produkt og butikker ---
@@ -9,15 +9,6 @@ const storesToCheck = [
   { name: "Gentofte", code: "121" },
   { name: "København", code: "686" },
 ];
-
-// --- Patch IKEA timeout til 15 sekunder ---
-IOWS2.prototype.fetch = (function (original) {
-  return async function (...args) {
-    const config = args[0];
-    config.timeout = 15000; // 15 sekunder
-    return original.call(this, config);
-  };
-})(IOWS2.prototype.fetch);
 
 // --- Mail setup via GitHub Secrets ---
 const transporter = nodemailer.createTransport({
@@ -45,6 +36,16 @@ async function sendMail(message) {
   }
 }
 
+// --- Wrap availability med længere timeout ---
+async function availabilityWithTimeout(storeCode, productId, timeout = 15000) {
+  return Promise.race([
+    availability(storeCode, productId),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout efter ${timeout}ms`)), timeout)
+    ),
+  ]);
+}
+
 // --- Tjek lager for hver butik ---
 async function run() {
   console.log("=== Starter lagerstatus tjek ===");
@@ -54,7 +55,7 @@ async function run() {
   for (const store of storesToCheck) {
     console.log(`Tjekker butik: ${store.name} (${store.code})...`);
     try {
-      const result = await availability(store.code, productId);
+      const result = await availabilityWithTimeout(store.code, productId);
       const { stock, probability } = result;
 
       console.log(
