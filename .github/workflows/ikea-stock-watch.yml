@@ -1,4 +1,4 @@
-name: IKEA Stock Checker
+name: IKEA Stock Checker2
 
 on:
   schedule:
