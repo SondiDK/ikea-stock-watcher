@@ -1,13 +1,18 @@
 import pkg from "ikea-availability-checker";
-const { availability } = pkg;
+const { availability, stores } = pkg;
 import nodemailer from "nodemailer";
 
-// --- Produkt og butikker ---
+// --- Find gyldige butikskoder ---
+const allowedStoreCodes = stores.map(s => s.code);
+console.log("Gyldige butikskoder:", allowedStoreCodes);
+
+// --- Produkt og butikker (kun gyldige) ---
 const productId = "30572984"; // testprodukt
 const storesToCheck = [
   { name: "Taastrup", code: "094" },
   { name: "Gentofte", code: "121" },
-  { name: "København", code: "686" },
+  // Find en gyldig "København"-butik fra allowedStoreCodes
+  { name: "København", code: allowedStoreCodes.includes("060") ? "060" : allowedStoreCodes[0] },
 ];
 
 // --- Mail setup via GitHub Secrets ---
@@ -36,7 +41,7 @@ async function sendMail(message) {
   }
 }
 
-// --- Wrap availability med længere timeout ---
+// --- Wrap availability med timeout ---
 async function availabilityWithTimeout(storeCode, productId, timeout = 15000) {
   return Promise.race([
     availability(storeCode, productId),
@@ -54,6 +59,10 @@ async function run() {
 
   for (const store of storesToCheck) {
     console.log(`Tjekker butik: ${store.name} (${store.code})...`);
+    if (!allowedStoreCodes.includes(store.code)) {
+      console.error(`Butikskoden ${store.code} er ikke gyldig. Springes over.`);
+      continue;
+    }
     try {
       const result = await availabilityWithTimeout(store.code, productId);
       const { stock, probability } = result;
@@ -67,7 +76,10 @@ async function run() {
         message += `${store.name} har ${stock} stk på lager (sandsynlighed: ${probability}).\n`;
       }
     } catch (err) {
-      console.error(`Fejl ved tjek af butik ${store.name} (${store.code}):`, err.message);
+      console.error(
+        `Fejl ved tjek af butik ${store.name} (${store.code}):`,
+        err.message
+      );
     }
   }
 
