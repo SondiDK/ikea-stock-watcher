@@ -2,7 +2,7 @@ name: Check IKEA Stock
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/30 * * * *"  # every 30 minutes
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,7 @@ jobs:
           JSON=$(npx ikea-availability-checker --json 30572984 --country dk || true)
           echo "$JSON"
 
+          # Export JSON for next step
           echo "json<<EOF" >> $GITHUB_OUTPUT
           echo "$JSON" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -44,23 +45,19 @@ jobs:
             process.exit(0);
           }
 
-          console.log("Parsed array length:", data.length);
-
-          // Stores you care about
-          const wanted = ["094", "121", "686"];
-
-          // Filter by buCode
+          const wanted = ["094", "121", "686"]; // Taastrup, Gentofte, København
           const relevant = data.filter(item => wanted.includes(item.buCode));
-
-          console.log("Relevant stores:", relevant);
-
-          // Find which stores have stock > 0
           const stocked = relevant.filter(item => item.stock > 0);
 
+          console.log("Relevant stores:", relevant);
           console.log("Stores with stock:", stocked);
 
-          // Expose result for next step
-          console.log(`hasStock=${stocked.length > 0}`);
+          // Write outputs for GitHub Actions
+          const fs = require("fs");
+          const outputFile = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(outputFile, `found_stock=${stocked.length > 0}\n`);
+          fs.appendFileSync(outputFile, `details=${JSON.stringify(stocked, null, 2)}\n`);
+
           process.exit(0);
           EOF
         env:
@@ -79,6 +76,6 @@ jobs:
           to: ${{ secrets.MAIL_TO }}
           from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
           body: |
-            The product is IN STOCK in at least one store:
+            The product is IN STOCK in at least one of the monitored stores:
 
             ${{ steps.parsed.outputs.details }}
