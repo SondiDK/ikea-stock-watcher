@@ -2,7 +2,7 @@ import pkg from "ikea-availability-checker";
 const { availability } = pkg;
 import nodemailer from "nodemailer";
 
-const productId = "10572876";
+const productId = "30572984"; //  real =   10572876
 const stores = [
   { id: "094", name: "Taastrup" },
   { id: "121", name: "Gentofte" },
