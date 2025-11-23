@@ -33,29 +33,35 @@ jobs:
         id: parsed
         run: |
           node << 'EOF'
-          const data = JSON.parse(process.env.JSON);
+          const raw = process.env.JSON;
 
-          const targets = {
-            "094": "Taastrup",
-            "121": "Gentofte",
-            "686": "København"
-          };
-
-          let found = false;
-          let lines = [];
-
-          for (const entry of data) {
-            if (!targets[entry.storeId]) continue;
-            lines.push(`${entry.store} (${entry.storeId}): stock=${entry.stock}`);
-
-            if (entry.stock > 0) found = true;
+          let data;
+          try {
+            data = JSON.parse(raw);
+          } catch (err) {
+            console.log("❌ JSON parse failed");
+            console.log(err);
+            process.exit(0);
           }
 
-          console.log("Parsed relevant stores:");
-          console.log(lines.join("\n"));
+          console.log("Parsed array length:", data.length);
 
-          console.log(`::set-output name=found_stock::${found}`);
-          console.log(`::set-output name=details::${lines.join("\n")}`);
+          // Stores you care about
+          const wanted = ["094", "121", "686"];
+
+          // Filter by buCode
+          const relevant = data.filter(item => wanted.includes(item.buCode));
+
+          console.log("Relevant stores:", relevant);
+
+          // Find which stores have stock > 0
+          const stocked = relevant.filter(item => item.stock > 0);
+
+          console.log("Stores with stock:", stocked);
+
+          // Expose result for next step
+          console.log(`hasStock=${stocked.length > 0}`);
+          process.exit(0);
           EOF
         env:
           JSON: ${{ steps.stock.outputs.json }}
