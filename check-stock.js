@@ -1,18 +1,19 @@
 import { scrapeProduct } from "ikea-availability-checker";
 import nodemailer from "nodemailer";
 
-const productId = "10572876"; // SKOGSNÄS
+// SKOGSNÄS og de tre butikker
+const productId = "10572876";
 const stores = [
   { id: "094", name: "Taastrup" },
   { id: "121", name: "Gentofte" },
   { id: "686", name: "København" },
 ];
 
-// Mail opsætning (bruges i GitHub Secrets)
+// Nodemailer opsætning (fra GitHub Secrets)
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT),
-  secure: process.env.SMTP_SECURE === "true",
+  port: parseInt(process.env.SMTP_PORT), // 587
+  secure: process.env.SMTP_SECURE === "true", // false → STARTTLS
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -29,7 +30,7 @@ async function sendMail(message) {
 }
 
 async function run() {
-  console.log("Checking availability for SKOGSNÄS...");
+  console.log("Tjekker lagerstatus for SKOGSNÄS...");
 
   const results = await scrapeProduct({
     productId,
@@ -52,10 +53,10 @@ async function run() {
   }
 
   if (found) {
-    console.log("SENDING MAIL!");
+    console.log("Lager fundet – sender mail!");
     await sendMail(message);
   } else {
-    console.log("No stock in selected stores.");
+    console.log("Ingen lager i de valgte butikker.");
   }
 }
 
