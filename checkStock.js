@@ -2,12 +2,12 @@ import pkg from "ikea-availability-checker";
 const { availability } = pkg;
 import nodemailer from "nodemailer";
 
-// --- Produkt og butikker ---
+// --- Config ---
 const productId = "30572984"; // testprodukt
-const storesToCheck = [
+const stores = [
   { name: "Taastrup", code: "094" },
   { name: "Gentofte", code: "121" },
-  { name: "København", code: "060" }, // gyldig butik fra pakken
+  { name: "København", code: "686" },
 ];
 
 // --- Mail setup via GitHub Secrets ---
@@ -36,49 +36,37 @@ async function sendMail(message) {
   }
 }
 
-// --- Wrap availability med timeout ---
-async function availabilityWithTimeout(storeCode, productId, timeout = 15000) {
-  return Promise.race([
-    availability(storeCode, productId),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout efter ${timeout}ms`)), timeout)
-    ),
-  ]);
+// --- Check stock via library ---
+async function checkStore(store) {
+  console.log(`Tjekker butik: ${store.name} (${store.code})...`);
+  try {
+    // Timeout kan sættes med axios config
+    const result = await availability(store.code, productId, { timeout: 20000 });
+    // result er et JSON-objekt
+    if (result?.availableStock > 0) {
+      console.log(`${store.name} har ${result.availableStock} på lager!`);
+      return `${store.name}: ${result.availableStock} stk. på lager`;
+    }
+    console.log(`${store.name} har ingen på lager.`);
+    return null;
+  } catch (err) {
+    console.error(`Fejl ved tjek af butik ${store.name} (${store.code}):`, err.message);
+    return null;
+  }
 }
 
-// --- Tjek lager for hver butik ---
+// --- Main ---
 async function run() {
   console.log("=== Starter lagerstatus tjek ===");
+
   let message = "";
-  let found = false;
-
-  for (const store of storesToCheck) {
-    console.log(`Tjekker butik: ${store.name} (${store.code})...`);
-    try {
-      const result = await availabilityWithTimeout(store.code, productId);
-      const { stock, probability } = result;
-
-      console.log(
-        `Butik ${store.name}: stock = ${stock}, sandsynlighed = ${probability}`
-      );
-
-      if (stock > 0) {
-        found = true;
-        message += `${store.name} har ${stock} stk på lager (sandsynlighed: ${probability}).\n`;
-      }
-    } catch (err) {
-      console.error(
-        `Fejl ved tjek af butik ${store.name} (${store.code}):`,
-        err.message
-      );
-    }
+  for (const store of stores) {
+    const result = await checkStore(store);
+    if (result) message += result + "\n";
   }
 
-  if (found) {
-    console.log("Lager fundet! Mail vil blive sendt med detaljer:");
-    console.log("------ DEBUG MESSAGE START ------");
-    console.log(message);
-    console.log("------- DEBUG MESSAGE END -------");
+  if (message) {
+    console.log("Lager fundet! Sender mail...");
     await sendMail(message);
   } else {
     console.log("Ingen lager i de valgte butikker.");
@@ -87,5 +75,4 @@ async function run() {
   console.log("=== Lagerstatus tjek færdigt ===");
 }
 
-// --- Kør script ---
 run();
