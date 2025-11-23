@@ -41,7 +41,7 @@ async function checkStore(store) {
   console.log(`Tjekker butik: ${store.name} (${store.code})...`);
   try {
     // Timeout kan sættes med axios config
-    const result = await availability(store.code, productId, { timeout: 20000 });
+    const result = await availability(store.code, productId, { timeout: 60000 });
     // result er et JSON-objekt
     if (result?.availableStock > 0) {
       console.log(`${store.name} har ${result.availableStock} på lager!`);
