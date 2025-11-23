@@ -1,4 +1,5 @@
-import { scrapeProduct } from "ikea-availability-checker";
+import pkg from "ikea-availability-checker";
+const { scrapeProduct } = pkg;
 import nodemailer from "nodemailer";
 
 // SKOGSNÄS og de tre butikker
