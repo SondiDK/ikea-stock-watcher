@@ -18,59 +18,49 @@ jobs:
         with:
           node-version: 18
 
-      - name: Check IKEA stock
-        id: check_stock
+      - name: Fetch IKEA stock as JSON
+        id: stock
         run: |
-          echo "=== Checking IKEA stock ==="
-          RESULT=$(npx ikea-availability-checker 30572984 --country dk || true)
-          echo "$RESULT"
+          echo "=== Fetching IKEA stock (JSON) ==="
+          JSON=$(npx ikea-availability-checker --json 30572984 --country dk || true)
+          echo "$JSON"
 
-          # Save result so next step can parse it
-          echo "result<<EOF" >> $GITHUB_OUTPUT
-          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "json<<EOF" >> $GITHUB_OUTPUT
+          echo "$JSON" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Parse stock for selected stores
+      - name: Parse JSON and detect stock
         id: parsed
         run: |
           node << 'EOF'
-          const raw = process.env.RAW;
-          const lines = raw.split("\n").filter(l => l.includes("│"));
+          const data = JSON.parse(process.env.JSON);
 
-          // buCodes we care about
           const targets = {
             "094": "Taastrup",
             "121": "Gentofte",
             "686": "København"
           };
 
-          let foundStock = false;
-          let details = [];
+          let found = false;
+          let lines = [];
 
-          for (const line of lines) {
-            const cols = line.split("│").map(c => c.trim());
-            // Expected format: date | product | country | country | buCode | store | stock | probability | restock
-            const buCode = cols[4];
-            const store = cols[5];
-            const stock = parseInt(cols[6], 10);
+          for (const entry of data) {
+            if (!targets[entry.storeId]) continue;
+            lines.push(`${entry.store} (${entry.storeId}): stock=${entry.stock}`);
 
-            if (targets[buCode]) {
-              details.push(`${store} (${buCode}): stock=${stock}`);
-              if (stock > 0) foundStock = true;
-            }
+            if (entry.stock > 0) found = true;
           }
 
-          console.log("Parsed:");
-          console.log(details.join("\n"));
+          console.log("Parsed relevant stores:");
+          console.log(lines.join("\n"));
 
-          // Output for GitHub Actions
-          console.log(`::set-output name=found_stock::${foundStock}`);
-          console.log(`::set-output name=details::${details.join("\n")}`);
+          console.log(`::set-output name=found_stock::${found}`);
+          console.log(`::set-output name=details::${lines.join("\n")}`);
           EOF
         env:
-          RAW: ${{ steps.check_stock.outputs.result }}
+          JSON: ${{ steps.stock.outputs.json }}
 
-      - name: Send mail if stock available
+      - name: Send mail
         if: steps.parsed.outputs.found_stock == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
@@ -83,9 +73,6 @@ jobs:
           to: ${{ secrets.MAIL_TO }}
           from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
           body: |
-            The product is in stock in one of your selected stores:
+            The product is IN STOCK in at least one store:
 
             ${{ steps.parsed.outputs.details }}
-
-            Raw data:
-            ${{ steps.check_stock.outputs.result }}
