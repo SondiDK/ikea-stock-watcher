@@ -1,13 +1,23 @@
 import pkg from "ikea-availability-checker";
-const { availability, stores: ikeaStores } = pkg;
+const { availability, IOWS2 } = pkg;
 import nodemailer from "nodemailer";
 
-const productId = "30572984"; // SKOGSNÄS = 10572876   
+// --- Produkt og butikker ---
+const productId = "30572984"; // testprodukt
 const storesToCheck = [
   { name: "Taastrup", code: "094" },
   { name: "Gentofte", code: "121" },
-  { name: "København", code: "60" }, // opdateret København butikId, tjek ikeaStores hvis nødvendigt
+  { name: "København", code: "686" },
 ];
+
+// --- Patch IKEA timeout til 15 sekunder ---
+IOWS2.prototype.fetch = (function (original) {
+  return async function (...args) {
+    const config = args[0];
+    config.timeout = 15000; // 15 sekunder
+    return original.call(this, config);
+  };
+})(IOWS2.prototype.fetch);
 
 // --- Mail setup via GitHub Secrets ---
 const transporter = nodemailer.createTransport({
@@ -26,7 +36,7 @@ async function sendMail(message) {
     await transporter.sendMail({
       from: process.env.MAIL_FROM,
       to: process.env.MAIL_TO,
-      subject: "IKEA Lagerstatus – SKOGSNÄS er på lager!",
+      subject: "IKEA Lagerstatus – Produkt på lager!",
       text: message,
     });
     console.log("Mail sendt!");
@@ -35,25 +45,16 @@ async function sendMail(message) {
   }
 }
 
-// --- Timeout wrapper for IKEA API ---
-async function availabilityWithTimeout(storeId, productId, timeout = 15000) {
-  return Promise.race([
-    availability(storeId, productId),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout efter ${timeout}ms`)), timeout)
-    ),
-  ]);
-}
-
+// --- Tjek lager for hver butik ---
 async function run() {
-  console.log("=== Starter lagerstatus tjek for SKOGSNÄS ===");
+  console.log("=== Starter lagerstatus tjek ===");
   let message = "";
   let found = false;
 
   for (const store of storesToCheck) {
     console.log(`Tjekker butik: ${store.name} (${store.code})...`);
     try {
-      const result = await availabilityWithTimeout(store.code, productId);
+      const result = await availability(store.code, productId);
       const { stock, probability } = result;
 
       console.log(
@@ -82,5 +83,5 @@ async function run() {
   console.log("=== Lagerstatus tjek færdigt ===");
 }
 
-// Kør scriptet
+// --- Kør script ---
 run();
