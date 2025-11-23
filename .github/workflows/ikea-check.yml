@@ -2,8 +2,8 @@ name: IKEA Stock Checker
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
-  workflow_dispatch:
+    - cron: "*/30 * * * *" # Kører hver 30. minut
+  workflow_dispatch: # Kan køres manuelt
 
 jobs:
   check:
