@@ -1,0 +1,60 @@
+name: IKEA Stock Watcher
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour
+  workflow_dispatch:
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install IKEA CLI
+        run: npm install -g ikea-availability-checker
+
+      - name: Check stock for SKOGSNÄS
+        id: check
+        run: |
+          echo "=== Checking IKEA stock ==="
+          ikea-availability-checker 30572984 --country dk > stock.txt
+          cat stock.txt
+          echo "=== Finished stock check ==="
+
+      - name: Filter stores and send email if in stock
+        if: always()
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: |
+          # Only keep the stores we care about
+          STOCK=$(grep -E "Taastrup|Gentofte|København" stock.txt | grep -v "0")
+          
+          if [ ! -z "$STOCK" ]; then
+            echo "Stock available! Sending email..."
+            
+            # Install simple mailer
+            npm install -g nodemailer-cli
+
+            # Send email
+            nodemailer-cli \
+              --host mail.mail-online.dk \
+              --port 587 \
+              --secure false \
+              --user "$SMTP_USER" \
+              --pass "$SMTP_PASS" \
+              --to "$ALERT_EMAIL" \
+              --subject "IKEA Stock Alert" \
+              --body "$STOCK"
+          else
+            echo "No stock in monitored stores."
+          fi
