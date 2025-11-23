@@ -22,7 +22,7 @@ jobs:
         id: stock
         run: |
           echo "=== Fetching IKEA stock (JSON) ==="
-          JSON=$(npx ikea-availability-checker --json 30572984 --country dk || true)
+          JSON=$(npx ikea-availability-checker --json 10572876 --country dk || true)
           echo "$JSON"
 
           # Export JSON for next step
@@ -77,7 +77,7 @@ jobs:
           username: ${{ secrets.MAIL_TO }}
           password: ${{ secrets.MAIL_PASS }}
           subject: "IKEA product 30572984 is IN STOCK!"
-          to: ${{ secrets.MAIL_TO }}
+          to: ${{ secrets.MAIL_TO, celinvavkuhn@gmail.com}}
           from: "IKEA Stock Bot <${{ secrets.MAIL_TO }}>"
           body: |
             The product is IN STOCK in at least one of the monitored stores:
