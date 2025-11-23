@@ -1,53 +1,49 @@
-name: IKEA Stock Checker2
+name: Check IKEA Stock
 
 on:
   schedule:
-    # Run every 6 hours
-    - cron: '0 */6 * * *'
-  workflow_dispatch: # Allows manual trigger
+    - cron: "*/30 * * * *"  # hvert 30. minut
+  workflow_dispatch:
 
 jobs:
   check-stock:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '20'
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
-    - name: Install dependencies
-      run: npm install ikea-availability-checker
+      - name: Install IKEA CLI
+        run: npm install -g ikea-availability-checker
 
-    - name: Check IKEA stock
-      run: |
-        echo "=== Checking IKEA stock ==="
-        # Attempt multiple times in case of timeout
-        for attempt in 1 2 3; do
-          echo "Attempt $attempt..."
-          npx ikea-availability-checker 30572984 --country dk > stock.txt && break
-          echo "⏳ Waiting 5s before retry..."
-          sleep 5
-        done
+      - name: Check IKEA stock
+        id: check_stock
+        run: |
+          echo "=== Checking IKEA stock ==="
+          RESULT=$(ikea-availability-checker 30572984 166 || true)
+          echo "$RESULT"
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-        echo "=== Stock Result ==="
-        cat stock.txt
-        echo "=== Finished stock check ==="
-
-    # Optional: Send result via email
-    #- name: Send email with stock results
-    #  uses: dawidd6/action-send-mail@v3
-    #  with:
-    #    server_address: ${{ secrets.SMTP_SERVER }}
-    #    server_port: ${{ secrets.SMTP_PORT }}
-    #    username: ${{ secrets.SMTP_USER }}
-    #    password: ${{ secrets.SMTP_PASSWORD }}
-    #    subject: "IKEA Stock Check Result"
-    #    body: |
-    #      Stock check done. See below:
-    #      $(cat stock.txt)
-    #    to: ${{ secrets.EMAIL_TO }}
-    #    from: ${{ secrets.EMAIL_FROM }}
+      - name: Send mail if available
+        if: contains(steps.check_stock.outputs.result, 'in stock')
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: "IKEA Item is in stock!"
+          to: ${{ secrets.MAIL_TO }}
+          from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
+          body: |
+            Your IKEA product (30572984) is now in stock.
+            Raw result:
+            ${{ steps.check_stock.outputs.result }}
