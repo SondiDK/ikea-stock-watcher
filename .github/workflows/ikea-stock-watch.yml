@@ -1,54 +1,91 @@
-name: IKEA Stock Checker (CLI)
+name: Check IKEA Stock
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
 
 jobs:
   check-stock:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Install Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      - name: Install CLI
-        run: npm install ikea-availability-checker
-
-      - name: Run stock check via CLI
+      - name: Check IKEA stock
         id: check_stock
         run: |
           echo "=== Checking IKEA stock ==="
+          RESULT=$(npx ikea-availability-checker 30572984 --country dk || true)
+          echo "$RESULT"
 
-          # Run CLI and capture output to a variable
-          OUTPUT=$(npx ikea-availability-checker 30572984 --country dk)
+          # Save result so next step can parse it
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESULT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          echo "=== RAW CLI OUTPUT (visible in logs) ==="
-          echo "$OUTPUT"
-
-          # Expose for next steps
-          # Must escape % for GitHub Actions
-          OUTPUT_ESCAPED="${OUTPUT//'%'/'%25'}"
-          OUTPUT_ESCAPED="${OUTPUT_ESCAPED//$'\n'/'%0A'}"
-          OUTPUT_ESCAPED="${OUTPUT_ESCAPED//$'\r'/'%0D'}"
-
-          echo "::set-output name=result::$OUTPUT_ESCAPED"
-
-          echo "=== Finished CLI run ==="
-
-      - name: Debug RAW output (full JSON.stringify)
+      - name: Parse stock for selected stores
+        id: parsed
         run: |
           node << 'EOF'
           const raw = process.env.RAW;
-          console.log("=== RAW DEBUG START ===");
-          console.log(JSON.stringify(raw, null, 2));
-          console.log("=== RAW DEBUG END ===");
+          const lines = raw.split("\n").filter(l => l.includes("│"));
+
+          // buCodes we care about
+          const targets = {
+            "094": "Taastrup",
+            "121": "Gentofte",
+            "686": "København"
+          };
+
+          let foundStock = false;
+          let details = [];
+
+          for (const line of lines) {
+            const cols = line.split("│").map(c => c.trim());
+            // Expected format: date | product | country | country | buCode | store | stock | probability | restock
+            const buCode = cols[4];
+            const store = cols[5];
+            const stock = parseInt(cols[6], 10);
+
+            if (targets[buCode]) {
+              details.push(`${store} (${buCode}): stock=${stock}`);
+              if (stock > 0) foundStock = true;
+            }
+          }
+
+          console.log("Parsed:");
+          console.log(details.join("\n"));
+
+          // Output for GitHub Actions
+          console.log(`::set-output name=found_stock::${foundStock}`);
+          console.log(`::set-output name=details::${details.join("\n")}`);
           EOF
         env:
           RAW: ${{ steps.check_stock.outputs.result }}
+
+      - name: Send mail if stock available
+        if: steps.parsed.outputs.found_stock == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USER }}
+          password: ${{ secrets.MAIL_PASS }}
+          subject: "IKEA product 30572984 is IN STOCK!"
+          to: ${{ secrets.MAIL_TO }}
+          from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
+          body: |
+            The product is in stock in one of your selected stores:
+
+            ${{ steps.parsed.outputs.details }}
+
+            Raw data:
+            ${{ steps.check_stock.outputs.result }}
