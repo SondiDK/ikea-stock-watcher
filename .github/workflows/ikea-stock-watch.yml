@@ -74,11 +74,11 @@ jobs:
           server_address: smtp.gmail.com
           server_port: 465
           secure: true
-          username: ${{ secrets.MAIL_USER }}
+          username: ${{ secrets.MAIL_TO }}
           password: ${{ secrets.MAIL_PASS }}
           subject: "IKEA product 30572984 is IN STOCK!"
           to: ${{ secrets.MAIL_TO }}
-          from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
+          from: "IKEA Stock Bot <${{ secrets.MAIL_TO }}>"
           body: |
             The product is IN STOCK in at least one of the monitored stores:
 
