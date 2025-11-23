@@ -35,6 +35,8 @@ jobs:
         run: |
           node << 'EOF'
           const raw = process.env.JSON;
+          const fs = require("fs");
+          const outputFile = process.env.GITHUB_OUTPUT;
 
           let data;
           try {
@@ -52,16 +54,18 @@ jobs:
           console.log("Relevant stores:", relevant);
           console.log("Stores with stock:", stocked);
 
-          // Write outputs for GitHub Actions
-          const fs = require("fs");
-          const outputFile = process.env.GITHUB_OUTPUT;
+          // Write single-line output for found_stock
           fs.appendFileSync(outputFile, `found_stock=${stocked.length > 0}\n`);
-          fs.appendFileSync(outputFile, `details=${JSON.stringify(stocked, null, 2)}\n`);
+
+          // Write multi-line JSON safely using <<EOF
+          const details = JSON.stringify(stocked);
+          fs.appendFileSync(outputFile, `details<<EOF\n${details}\nEOF\n`);
 
           process.exit(0);
           EOF
         env:
           JSON: ${{ steps.stock.outputs.json }}
+
 
       - name: Send mail
         if: steps.parsed.outputs.found_stock == 'true'
