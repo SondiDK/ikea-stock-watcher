@@ -59,4 +59,33 @@ async function run() {
       const { stock, probability } = result;
 
       console.log(
-        `B
+        `Butik ${store.name}: stock = ${stock}, sandsynlighed = ${probability}`
+      );
+
+      if (stock > 0) {
+        found = true;
+        message += `${store.name} har ${stock} stk på lager (sandsynlighed: ${probability}).\n`;
+      }
+    } catch (err) {
+      console.error(
+        `Fejl ved tjek af butik ${store.name} (${store.code}):`,
+        err.message
+      );
+    }
+  }
+
+  if (found) {
+    console.log("Lager fundet! Mail vil blive sendt med detaljer:");
+    console.log("------ DEBUG MESSAGE START ------");
+    console.log(message);
+    console.log("------- DEBUG MESSAGE END -------");
+    await sendMail(message);
+  } else {
+    console.log("Ingen lager i de valgte butikker.");
+  }
+
+  console.log("=== Lagerstatus tjek færdigt ===");
+}
+
+// --- Kør script ---
+run();
