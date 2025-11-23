@@ -2,7 +2,7 @@ name: Check IKEA Stock
 
 on:
   schedule:
-    - cron: "*/30 * * * *" # kør hvert 30. minut
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -25,13 +25,53 @@ jobs:
           RESULT=$(npx ikea-availability-checker 30572984 --country dk || true)
           echo "$RESULT"
 
-          # send output videre til efterfølgende steps
+          # Save result so next step can parse it
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$RESULT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Send mail if in stock
-        if: contains(steps.check_stock.outputs.result, 'in stock')
+      - name: Parse stock for selected stores
+        id: parsed
+        run: |
+          node << 'EOF'
+          const raw = process.env.RAW;
+          const lines = raw.split("\n").filter(l => l.includes("│"));
+
+          // buCodes we care about
+          const targets = {
+            "094": "Taastrup",
+            "121": "Gentofte",
+            "686": "København"
+          };
+
+          let foundStock = false;
+          let details = [];
+
+          for (const line of lines) {
+            const cols = line.split("│").map(c => c.trim());
+            // Expected format: date | product | country | country | buCode | store | stock | probability | restock
+            const buCode = cols[4];
+            const store = cols[5];
+            const stock = parseInt(cols[6], 10);
+
+            if (targets[buCode]) {
+              details.push(`${store} (${buCode}): stock=${stock}`);
+              if (stock > 0) foundStock = true;
+            }
+          }
+
+          console.log("Parsed:");
+          console.log(details.join("\n"));
+
+          // Output for GitHub Actions
+          console.log(`::set-output name=found_stock::${foundStock}`);
+          console.log(`::set-output name=details::${details.join("\n")}`);
+          EOF
+        env:
+          RAW: ${{ steps.check_stock.outputs.result }}
+
+      - name: Send mail if stock available
+        if: steps.parsed.outputs.found_stock == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -39,12 +79,13 @@ jobs:
           secure: true
           username: ${{ secrets.MAIL_USER }}
           password: ${{ secrets.MAIL_PASS }}
-          subject: "IKEA product 30572984 is in stock!"
+          subject: "IKEA product 30572984 is IN STOCK!"
           to: ${{ secrets.MAIL_TO }}
           from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
           body: |
-            Great news!
-            The IKEA product 30572984 appears to be in stock.
+            The product is in stock in one of your selected stores:
 
-            Raw result:
+            ${{ steps.parsed.outputs.details }}
+
+            Raw data:
             ${{ steps.check_stock.outputs.result }}
