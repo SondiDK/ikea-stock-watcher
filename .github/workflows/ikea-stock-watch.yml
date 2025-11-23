@@ -1,85 +1,86 @@
-name: Check IKEA Stock
+name: IKEA Stock Checker
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # every 30 minutes
-  workflow_dispatch:
+    - cron: "*/30 * * * *" # every 30 minutes
+  workflow_dispatch: # manual trigger
 
 jobs:
   check-stock:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout the repository
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install Node
+      # 2️⃣ Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Fetch IKEA stock as JSON
-        id: stock
+      # 3️⃣ Install dependencies (if any)
+      - name: Install dependencies
+        run: npm install
+
+      # 4️⃣ Fetch IKEA stock as JSON
+      - name: Fetch IKEA stock
+        id: fetch
         run: |
           echo "=== Fetching IKEA stock (JSON) ==="
-          JSON=$(npx ikea-availability-checker --json 10572876 --country dk || true)
+          JSON=$(npx ikea-availability-checker --json 30572984 --country dk || true)
           echo "$JSON"
-
-          # Export JSON for next step
           echo "json<<EOF" >> $GITHUB_OUTPUT
           echo "$JSON" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Parse JSON and detect stock
-        id: parsed
+      # 5️⃣ Parse JSON and check for stock
+      - name: Parse stock
+        id: parse
         run: |
-          node << 'EOF'
-          const raw = process.env.JSON;
+          node <<'EOF'
           const fs = require("fs");
+          const raw = process.env.JSON;
           const outputFile = process.env.GITHUB_OUTPUT;
 
           let data;
           try {
             data = JSON.parse(raw);
           } catch (err) {
-            console.log("❌ JSON parse failed");
+            console.log("❌ Failed to parse JSON");
             console.log(err);
             process.exit(0);
           }
 
-          const wanted = ["094", "121", "686"]; // Taastrup, Gentofte, København
-          const relevant = data.filter(item => wanted.includes(item.buCode));
+          const wantedStores = ["094","121","686"]; // Taastrup, Gentofte, København
+          const relevant = data.filter(item => wantedStores.includes(item.buCode));
           const stocked = relevant.filter(item => item.stock > 0);
 
           console.log("Relevant stores:", relevant);
           console.log("Stores with stock:", stocked);
 
-          // Write single-line output for found_stock
+          // Set workflow outputs
           fs.appendFileSync(outputFile, `found_stock=${stocked.length > 0}\n`);
-
-          // Write multi-line JSON safely using <<EOF
-          const details = JSON.stringify(stocked);
-          fs.appendFileSync(outputFile, `details<<EOF\n${details}\nEOF\n`);
-
-          process.exit(0);
+          fs.appendFileSync(outputFile, `details<<EOF\n${JSON.stringify(stocked, null, 2)}\nEOF\n`);
           EOF
         env:
-          JSON: ${{ steps.stock.outputs.json }}
+          JSON: ${{ steps.fetch.outputs.json }}
 
-
-      - name: Send mail
-        if: steps.parsed.outputs.found_stock == 'true'
+      # 6️⃣ Send email if stock exists
+      - name: Send notification email
+        if: steps.parse.outputs.found_stock == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           secure: true
-          username: ${{ secrets.MAIL_TO }}
+          username: ${{ secrets.MAIL_USER }}
           password: ${{ secrets.MAIL_PASS }}
+          from: "IKEA Stock Bot <${{ secrets.MAIL_USER }}>"
+          to: "oling94@gmail.com, celinvavkuhn@gmail.com" # multiple recipients
           subject: "IKEA product 30572984 is IN STOCK!"
-          to: "oling94@gmail.com, celinvavkuhn@gmail.com"
-          from: "IKEA Stock Bot <${{ secrets.MAIL_TO }}>"
           body: |
             The product is IN STOCK in at least one of the monitored stores:
 
-            ${{ steps.parsed.outputs.details }}
+            ${{ steps.parse.outputs.details }}
