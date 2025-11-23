@@ -2,7 +2,7 @@ import pkg from "ikea-availability-checker";
 const { availability, stores: ikeaStores } = pkg;
 import nodemailer from "nodemailer";
 
-const productId = "10572876"; // SKOGSNÄS
+const productId = "30572984"; // SKOGSNÄS = 10572876   
 const storesToCheck = [
   { name: "Taastrup", code: "094" },
   { name: "Gentofte", code: "121" },
