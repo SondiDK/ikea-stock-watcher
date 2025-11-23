@@ -1,77 +1,79 @@
 import pkg from "ikea-availability-checker";
-const { availability } = pkg;
 import nodemailer from "nodemailer";
+const { availability } = pkg;
 
 // --- Config ---
-const productId = "30572984"; // testprodukt
+const productId = "30572984"; // test product
 const stores = [
   { name: "Taastrup", code: "094" },
   { name: "Gentofte", code: "121" },
   { name: "København", code: "686" },
 ];
 
-// --- Mail setup via GitHub Secrets ---
+const TIMEOUT = 20000; // 20 seconds
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds
+
+// --- Email setup (GitHub secrets) ---
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT, 10),
-  secure: process.env.SMTP_SECURE === "true",
+  host: process.env.MAIL_HOST,        // mail.mail-online.dk
+  port: parseInt(process.env.MAIL_PORT || "587"), // 587 for STARTTLS
+  secure: false,                      // STARTTLS
   auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    user: process.env.MAIL_USER,      // olleikea@mail-online.dk
+    pass: process.env.MAIL_PASS,
   },
 });
 
-async function sendMail(message) {
-  console.log("Sender mail...");
+// --- Helper ---
+async function sendEmail(subject, text) {
   try {
     await transporter.sendMail({
-      from: process.env.MAIL_FROM,
-      to: process.env.MAIL_TO,
-      subject: "IKEA Lagerstatus – Produkt på lager!",
-      text: message,
+      from: `"IKEA Alert" <${process.env.MAIL_USER}>`,
+      to: process.env.MAIL_RECEIVER,  // your recipient email
+      subject,
+      text,
     });
-    console.log("Mail sendt!");
+    console.log("📧 Email sendt!");
   } catch (err) {
-    console.error("Fejl ved afsendelse af mail:", err);
+    console.error("❌ Fejl ved afsendelse af email:", err.message);
   }
 }
 
-// --- Check stock via library ---
 async function checkStore(store) {
   console.log(`Tjekker butik: ${store.name} (${store.code})...`);
-  try {
-    // Timeout kan sættes med axios config
-    const result = await availability(store.code, productId, { timeout: 60000 });
-    // result er et JSON-objekt
-    if (result?.availableStock > 0) {
-      console.log(`${store.name} har ${result.availableStock} på lager!`);
-      return `${store.name}: ${result.availableStock} stk. på lager`;
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await availability(store.code, productId, { timeout: TIMEOUT });
+      if (result?.stock && result.stock > 0) {
+        console.log(`✅ ${store.name} har ${result.stock} på lager!`);
+        await sendEmail(
+          `IKEA Lager Alert: ${store.name}`,
+          `Produkt ${productId} er på lager i ${store.name} (${result.stock} stk)!`
+        );
+      } else {
+        console.log(`❌ ${store.name} har ingen på lager.`);
+      }
+      return; // success
+    } catch (err) {
+      console.error(`⚠️ Forsøg ${attempt} fejlede for ${store.name} (${store.code}):`, err.message);
+      if (attempt < MAX_RETRIES) {
+        console.log(`⏳ Venter ${RETRY_DELAY / 1000}s før næste forsøg...`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY));
+      } else {
+        console.error(`❌ Alle forsøg mislykkedes for ${store.name}`);
+      }
     }
-    console.log(`${store.name} har ingen på lager.`);
-    return null;
-  } catch (err) {
-    console.error(`Fejl ved tjek af butik ${store.name} (${store.code}):`, err.message);
-    return null;
   }
 }
 
 // --- Main ---
 async function run() {
   console.log("=== Starter lagerstatus tjek ===");
-
-  let message = "";
   for (const store of stores) {
-    const result = await checkStore(store);
-    if (result) message += result + "\n";
+    await checkStore(store);
   }
-
-  if (message) {
-    console.log("Lager fundet! Sender mail...");
-    await sendMail(message);
-  } else {
-    console.log("Ingen lager i de valgte butikker.");
-  }
-
   console.log("=== Lagerstatus tjek færdigt ===");
 }
 
